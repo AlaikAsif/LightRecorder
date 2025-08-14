@@ -1,0 +1,8 @@
+{
+  "fps": 60,
+  "resolution": "720p",
+  "audio": true,
+  "mic": false,
+  "device": "low",
+  "quality": "MJPEG"
+}

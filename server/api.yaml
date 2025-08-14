@@ -1,0 +1,103 @@
+openapi: 3.0.0
+info:
+  title: Ultra-Light Game Screen Recorder API
+  version: 1.0.0
+  description: API for user authentication, entitlement validation, and token management for the Ultra-Light Game Screen Recorder.
+servers:
+  - url: http://localhost:5000/v1
+paths:
+  /auth/login:
+    post:
+      summary: User Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+                product_key:
+                  type: string
+      responses:
+        '200':
+          description: Successful login
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jwt:
+                    type: string
+                  refresh_token:
+                    type: string
+        '401':
+          description: Invalid credentials
+
+  /auth/refresh:
+    post:
+      summary: Refresh JWT Token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: Successful token refresh
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jwt:
+                    type: string
+        '401':
+          description: Invalid refresh token
+
+  /entitlement/validate:
+    post:
+      summary: Validate User Entitlement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                jwt:
+                  type: string
+      responses:
+        '200':
+          description: Entitlement validated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rec_token:
+                    type: string
+        '403':
+          description: Entitlement validation failed
+
+  /telemetry/ping:
+    post:
+      summary: Telemetry Ping
+      responses:
+        '200':
+          description: Successful ping response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "pong"

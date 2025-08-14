@@ -1,0 +1,134 @@
+tasks:
+  - id: 1
+    name: "Setup Project Structure"
+    description: "Create folder structure for client app, core capture, audio, server, docs, and libraries."
+    output: "Folder skeleton as described in project setup"
+
+  - id: 2
+    name: "Implement Account Validation Gate"
+    description: |
+      1. Client prompts user for login (email/password or product key)
+      2. Sends credentials to server (/login)
+      3. Receives access JWT + refresh token
+      4. Validate entitlement (/entitlement/validate) → rec_token
+      5. Cache encrypted rec_token for offline grace (DPAPI)
+      6. Only after validation, load core DLL/module
+    notes: "Token must be bound to HWID to prevent copying"
+
+  - id: 3
+    name: "Build Low-End Capture Path"
+    description: |
+      - Capture desktop/window using GDI BitBlt / StretchBlt
+      - Scaled resolution (default 720p)
+      - 30/60 FPS selectable
+      - Preallocate 3–4 frame buffers
+      - Push frames to SPSC ring buffer
+    output: "Low-end capture module"
+
+  - id: 4
+    name: "Build High-End Capture Path"
+    description: |
+      - Hook GPU APIs for exclusive fullscreen:
+        - D3D9 Present
+        - DXGI Present1
+        - OpenGL wglSwapBuffers
+      - Copy backbuffer to staging CPU memory
+      - Enqueue frame to SPSC queue
+      - Optional scaled/native resolution capture
+    output: "High-end capture module"
+
+  - id: 5
+    name: "Implement MJPEG Encoder"
+    description: |
+      - Convert BGRA → YUV420
+      - DCT → Quant → Huffman → MJPEG
+      - Precompute tables (no per-frame allocations)
+      - Output frames to I/O writer
+      - Optional delta-tiles encoding for low CPU/high motion
+    output: "MJPEG encoder module"
+
+  - id: 6
+    name: "Implement Audio & Mic Capture"
+    description: |
+      - Use WASAPI for system audio loopback
+      - Capture mic audio
+      - Encode to PCM16 or optional ADPCM
+      - Preallocate audio buffers to limit memory usage
+      - Integrate with AVI mux or separate audio track
+    output: "Audio/mic capture module"
+
+  - id: 7
+    name: "Build I/O Writer & AVI Mux"
+    description: |
+      - Preallocate 8–16 MB chunk buffer
+      - Sequentially write frames to disk
+      - Build index table in memory; write at the end
+      - Minimize per-frame disk writes
+    output: "Disk writer module"
+
+  - id: 8
+    name: "Implement Ring Buffers & Fallback Logic"
+    description: |
+      - SPSC lock-free ring buffers between capture → encode → I/O
+      - Drop oldest frame if buffer full
+      - Monitor queue fill rate
+      - Auto fallback: 60 → 30 FPS if encoder queue >75% for 800ms
+      - Auto recover: 30 → 60 FPS if queue <25% for 5s
+    output: "Queue/fallback logic"
+
+  - id: 9
+    name: "Implement Core Module Loader"
+    description: |
+      - Core module (DLL) loaded only after validation
+      - Initializes capture, encoder, audio, and I/O writer
+      - Accepts rec_token from auth gate
+      - Refuses to run if token invalid
+    output: "Core loader module"
+
+  - id: 10
+    name: "Implement User Options (UI/CLI)"
+    description: |
+      - CLI flags or GUI options:
+        - --fps 30/60
+        - --res 720p/1080p/1440p
+        - --audio / --mic
+        - --device low/high
+        - --quality MJPEG/delta
+      - Default settings for low-end path
+      - High-end optional for capable machines
+    output: "User options module"
+
+  - id: 11
+    name: "Security & Anti-Theft Measures"
+    description: |
+      - Encrypt cached token
+      - HWID binding
+      - Optional string/DLL obfuscation
+      - Delay-load capture module until token verified
+      - Server-side token revocation enforcement
+    output: "Anti-theft integration"
+
+  - id: 12
+    name: "Server Implementation"
+    description: |
+      - REST API endpoints:
+        - POST /v1/auth/login → returns JWT + refresh token
+        - POST /v1/auth/refresh → returns JWT
+        - POST /v1/entitlement/validate → returns rec_token
+        - POST /v1/telemetry/ping → optional
+      - DB: users, licenses, devices, sessions, rec_tokens
+      - Argon2id for password hashing
+      - JWT RS256 signing
+      - Rate limiting & device/session limits
+    output: "License & validation server"
+
+  - id: 13
+    name: "Testing & Validation"
+    description: |
+      - Low-end: 720p30/60, GDI path, ≤128MB memory, CPU <50%
+      - High-end: 1080p/1440p, GPU path, 60FPS, audio/mic capture
+      - Disk write test: sequential, no stalls
+      - Frame pacing: max jitter ≤2ms
+      - Offline token grace test
+      - Fallback logic: queue overflow triggers 60→30 FPS
+    output: "Tested recorder system"
