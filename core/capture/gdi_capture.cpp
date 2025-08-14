@@ -64,10 +64,11 @@ void GDICapture::CaptureLoop() {
     size_t writeIndex = 0;
 
     while (running.load()) {
-        auto start = high_resolution_clock::now();
+        auto start = std::chrono::high_resolution_clock::now();
 
         int currentFps = fps.load();
-        auto frameInterval = milliseconds(1000 / std::max(1, currentFps));
+        int safeFps = (currentFps < 1) ? 1 : currentFps;
+        auto frameInterval = milliseconds(1000 / safeFps);
 
         HDC hdcTarget = GetDC(NULL);
         BitBlt(hdcMem, 0, 0, width, height, hdcTarget, 0, 0, SRCCOPY | CAPTUREBLT);
@@ -96,7 +97,7 @@ void GDICapture::CaptureLoop() {
 
         writeIndex = (writeIndex + 1) % bufferCount;
 
-        auto elapsed = high_resolution_clock::now() - start;
+        auto elapsed = std::chrono::high_resolution_clock::now() - start;
         if (elapsed < frameInterval) std::this_thread::sleep_for(frameInterval - elapsed);
     }
 }

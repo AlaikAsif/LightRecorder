@@ -1,0 +1,3 @@
+C:/Users/Alaik/Desktop/recorder/ultra-light-game-screen-recorder/build/CMakeFiles/UltraLightGameScreenRecorder.dir
+C:/Users/Alaik/Desktop/recorder/ultra-light-game-screen-recorder/build/CMakeFiles/ALL_BUILD.dir
+C:/Users/Alaik/Desktop/recorder/ultra-light-game-screen-recorder/build/CMakeFiles/ZERO_CHECK.dir

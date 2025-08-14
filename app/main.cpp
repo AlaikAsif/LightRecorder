@@ -4,6 +4,8 @@
 #include <limits>
 #include "auth_client.h"
 #include "../core/core.h"
+#include <thread>
+#include <chrono>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -29,6 +31,8 @@ int main(int argc, char* argv[]) {
     bool audioEnabled = false;
     std::string productKey;
     std::string serverUrl = "http://127.0.0.1:8000";
+    bool noAuth = false;
+    int autoRecordSeconds = 0;
 
     // Parse CLI
     for (int i = 1; i < argc; ++i) {
@@ -46,6 +50,10 @@ int main(int argc, char* argv[]) {
             productKey = argv[++i];
         } else if (arg == "--server" && i + 1 < argc) {
             serverUrl = argv[++i];
+        } else if (arg == "--no-auth") {
+            noAuth = true;
+        } else if (arg == "--auto-record" && i + 1 < argc) {
+            try { autoRecordSeconds = std::stoi(argv[++i]); } catch(...) { autoRecordSeconds = 0; }
         }
     }
 
@@ -53,15 +61,21 @@ int main(int argc, char* argv[]) {
 
     bool authOk = false;
 
+    if (noAuth) {
+        std::cout << "--no-auth provided: skipping authentication for local testing." << std::endl;
+        authOk = true;
+        goto AUTH_DONE;
+    }
+
     // If product key provided try that first
-    if (!productKey.empty()) {
+    if (!productKey.empty() && !authOk) {
         std::cout << "Using product key login..." << std::endl;
         authOk = auth.loginWithProductKey(productKey);
         if (!authOk) std::cerr << "Product key login failed." << std::endl;
     } else {
         // Try cached rec_token first (offline grace)
         std::string cached = auth.getCachedRecToken();
-        if (!cached.empty()) {
+        if (!cached.empty() && !authOk) {
             std::cout << "Cached rec_token found, attempting offline validation..." << std::endl;
             // validateEntitlement will accept cached token if accessToken missing
             if (auth.validateEntitlement()) {
@@ -89,10 +103,14 @@ int main(int argc, char* argv[]) {
         }
     }
 
+AUTH_DONE:
+
     // Validate entitlement (fetch rec_token and cache it)
-    if (!auth.validateEntitlement()) {
-        std::cerr << "Entitlement validation failed. Exiting." << std::endl;
-        return 1;
+    if (!noAuth) {
+        if (!auth.validateEntitlement()) {
+            std::cerr << "Entitlement validation failed. Exiting." << std::endl;
+            return 1;
+        }
     }
 
     std::cout << "Authentication and entitlement validated." << std::endl;
@@ -110,8 +128,13 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "Recording... Press ENTER to stop." << std::endl;
-    std::string dummy;
-    std::getline(std::cin, dummy);
+    if (autoRecordSeconds > 0) {
+        std::cout << "Auto-recording for " << autoRecordSeconds << " seconds..." << std::endl;
+        std::this_thread::sleep_for(std::chrono::seconds(autoRecordSeconds));
+    } else {
+        std::string dummy;
+        std::getline(std::cin, dummy);
+    }
 
     core.stop();
     std::cout << "Stopped." << std::endl;

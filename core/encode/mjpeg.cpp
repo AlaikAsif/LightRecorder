@@ -19,6 +19,10 @@ static void ensureGdiplusInit() {
     });
 }
 
+#ifdef HAVE_TURBOJPEG
+#include <turbojpeg.h>
+#endif
+
 // Helper to find encoder CLSID for JPEG
 static int getEncoderClsid(const WCHAR* format, CLSID* pClsid) {
     UINT num = 0;          // number of image encoders
@@ -46,11 +50,29 @@ static int getEncoderClsid(const WCHAR* format, CLSID* pClsid) {
 }
 
 MJPEGEncoder::MJPEGEncoder(int width, int height)
-    : width(width), height(height), quality(75) {
+    : width(width), height(height), quality(75)
+#ifdef HAVE_TURBOJPEG
+    , turboHandle(nullptr)
+#endif
+{
+#ifdef HAVE_TURBOJPEG
+    // initialize turbojpeg handle
+    turboHandle = tjInitCompress();
+    if (!turboHandle) {
+        // fallback to GDI+ if init fails
+        turboHandle = nullptr;
+    }
+#endif
     ensureGdiplusInit();
 }
 
 MJPEGEncoder::~MJPEGEncoder() {
+#ifdef HAVE_TURBOJPEG
+    if (turboHandle) {
+        tjDestroy((tjhandle)turboHandle);
+        turboHandle = nullptr;
+    }
+#endif
     // Intentionally do not shutdown GDI+ here; let process exit handle it
 }
 
@@ -61,6 +83,77 @@ void MJPEGEncoder::setQuality(int q) {
 }
 
 void MJPEGEncoder::encodeFrame(const uint8_t* frameData, std::vector<uint8_t>& outputBuffer) {
+#ifdef HAVE_TURBOJPEG
+    if (turboHandle) {
+        // TurboJPEG expects RGB or BGR input. Our frames are BGRA (32bpp), so provide pitch and pixel format.
+        int pixelSize = 3; // we'll pass BGRX by using TJPF_BGRX when available
+        unsigned char* compressedBuf = nullptr;
+        unsigned long compressedSize = 0;
+
+        // Use tjCompress2 with TJPF_BGRX if available; else convert to BGR buffer
+#ifdef TJPF_BGRX
+        int pixelFormat = TJPF_BGRX;
+        // tjCompress2 supports padded formats; pass width*4 as pitch
+        int pad = 0; // let lib handle
+        int flags = 0;
+        int subsamp = TJSAMP_420; // MJPEG typical subsampling
+        int err = tjCompress2((tjhandle)turboHandle,
+                              frameData, // srcBuf
+                              width,
+                              width * 4, // pitch
+                              height,
+                              pixelFormat,
+                              &compressedBuf,
+                              &compressedSize,
+                              subsamp,
+                              quality,
+                              flags);
+        if (err == 0 && compressedBuf && compressedSize > 0) {
+            outputBuffer.resize(compressedSize);
+            memcpy(outputBuffer.data(), compressedBuf, compressedSize);
+            tjFree(compressedBuf);
+            return;
+        }
+        // else fall through to GDI+ fallback
+#else
+        // No TJPF_BGRX defined; convert BGRA->BGR temporary buffer
+        std::vector<uint8_t> bgrbuf(width * height * 3);
+        uint8_t* dst = bgrbuf.data();
+        const uint8_t* src = frameData;
+        for (int y = 0; y < height; ++y) {
+            const uint8_t* row = src + y * width * 4;
+            for (int x = 0; x < width; ++x) {
+                // BGRA -> BGR
+                dst[0] = row[0];
+                dst[1] = row[1];
+                dst[2] = row[2];
+                dst += 3;
+                row += 4;
+            }
+        }
+        int err = tjCompress2((tjhandle)turboHandle,
+                              bgrbuf.data(),
+                              width,
+                              0,
+                              height,
+                              TJPF_BGR,
+                              &compressedBuf,
+                              &compressedSize,
+                              TJSAMP_420,
+                              quality,
+                              0);
+        if (err == 0 && compressedBuf && compressedSize > 0) {
+            outputBuffer.resize(compressedSize);
+            memcpy(outputBuffer.data(), compressedBuf, compressedSize);
+            tjFree(compressedBuf);
+            return;
+        }
+        // else fall through
+#endif
+    }
+#endif
+
+    // Fallback to GDI+ encoder if turbojpeg not present or failed
     ensureGdiplusInit();
 
     // Create Gdiplus Bitmap from raw BGRA data

@@ -1,0 +1,10 @@
+C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\app\main.cpp;C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\build\UltraLightGameScreenRecorder.dir\Release\main.obj
+C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\app\auth_client.cpp;C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\build\UltraLightGameScreenRecorder.dir\Release\auth_client.obj
+C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\core\capture\gdi_capture.cpp;C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\build\UltraLightGameScreenRecorder.dir\Release\gdi_capture.obj
+C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\core\capture\hook_present.cpp;C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\build\UltraLightGameScreenRecorder.dir\Release\hook_present.obj
+C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\core\encode\mjpeg.cpp;C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\build\UltraLightGameScreenRecorder.dir\Release\mjpeg.obj
+C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\core\encode\delta_tiles.cpp;C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\build\UltraLightGameScreenRecorder.dir\Release\delta_tiles.obj
+C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\core\io\avi_mux.cpp;C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\build\UltraLightGameScreenRecorder.dir\Release\avi_mux.obj
+C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\core\io\writer.cpp;C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\build\UltraLightGameScreenRecorder.dir\Release\writer.obj
+C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\core\audio\wasapi_capture.cpp;C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\build\UltraLightGameScreenRecorder.dir\Release\wasapi_capture.obj
+C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\core\core.cpp;C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\build\UltraLightGameScreenRecorder.dir\Release\core.obj

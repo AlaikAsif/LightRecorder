@@ -2,6 +2,7 @@
 #define AVI_MUX_H
 
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <vector>
 

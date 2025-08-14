@@ -23,6 +23,12 @@ private:
     int width;
     int height;
     int quality;
+
+#ifdef HAVE_TURBOJPEG
+    // turbojpeg handle for fast encoding
+    struct tjhandle_struct; // forward decl (opaque)
+    void* turboHandle;
+#endif
     // Additional private members for internal state management
 };
 

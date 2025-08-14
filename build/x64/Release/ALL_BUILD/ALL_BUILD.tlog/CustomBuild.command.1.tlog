@@ -1,0 +1,10 @@
+^C:\USERS\ALAIK\DESKTOP\RECORDER\ULTRA-LIGHT-GAME-SCREEN-RECORDER\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/Alaik/Desktop/recorder/ultra-light-game-screen-recorder -BC:/Users/Alaik/Desktop/recorder/ultra-light-game-screen-recorder/build --check-stamp-file C:/Users/Alaik/Desktop/recorder/ultra-light-game-screen-recorder/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

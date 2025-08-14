@@ -1,0 +1,14 @@
+{
+  "users": {
+    "test@local": {
+      "password_hash": "scrypt:32768:8:1$vPZ5ocIwR0VAp0zB$c88f206bd456bcfc71fcc07bbeaa4c60e9fe86cabaa83ff6b3e40b7021b2895607e50bc6d38576b3c28c37844e28000da1c298630bf07a99c232f13635bdf39f",
+      "id": 1
+    }
+  },
+  "licenses": {
+    "LOCAL-TEST-PROD-KEY-1234": {
+      "email": "test@local"
+    }
+  },
+  "next_user_id": 2
+}

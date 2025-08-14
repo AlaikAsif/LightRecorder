@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Alaik\Desktop\recorder\ultra-light-game-screen-recorder\build\CMakeFiles\6f013d8e8575002f4c8e3adee22fe6be\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{B287BF39-6213-3104-A9C1-75727F49CB0C}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

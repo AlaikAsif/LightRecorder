@@ -11,33 +11,15 @@
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "crypt32.lib")
 
-class AuthClient {
-public:
-    AuthClient(const std::string& serverUrl);
-    bool login(const std::string& username, const std::string& password);
-    bool loginWithProductKey(const std::string& productKey);
-    bool validateEntitlement();
-    std::string getAccessToken() const;
-    std::string getRefreshToken() const;
-    std::string getRecToken() const;
-
-private:
-    std::string serverUrl;
-    std::string accessToken;
-    std::string refreshToken;
-    std::string recToken;
-    std::string cachedRecToken;
-
-    bool sendLoginRequest(const std::string& username, const std::string& password);
-    void cacheRecToken(const std::string& token);
-    bool sendPost(const std::string& path, const std::string& body, const std::string& authHeader, std::string& outResponse);
-    std::string encryptDPAPI(const std::string& token);
-    std::string decryptDPAPI(const std::string& token);
-    std::string getHWID() const;
-    std::string extractJsonString(const std::string& json, const std::string& key) const;
-    std::string base64Encode(const std::string& data) const;
-    std::string base64Decode(const std::string& data) const;
-};
+static std::wstring utf8_to_wstring(const std::string& s) {
+    if (s.empty()) return std::wstring();
+    int needed = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), NULL, 0);
+    if (needed <= 0) return std::wstring();
+    std::wstring w;
+    w.resize(needed);
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], needed);
+    return w;
+}
 
 AuthClient::AuthClient(const std::string& serverUrl) : serverUrl(serverUrl) {}
 
@@ -46,7 +28,6 @@ bool AuthClient::login(const std::string& username, const std::string& password)
     std::string resp;
     if (!sendPost("/v1/auth/login", body, std::string(), resp)) return false;
 
-    // Very small JSON extraction helper (expects "access_token":"..." etc.)
     accessToken = extractJsonString(resp, "access_token");
     refreshToken = extractJsonString(resp, "refresh_token");
     std::string recToken = extractJsonString(resp, "rec_token");
@@ -69,7 +50,6 @@ bool AuthClient::loginWithProductKey(const std::string& productKey) {
 }
 
 bool AuthClient::validateEntitlement() {
-    // Prefer in-memory accessToken; if absent, try to use cached rec token
     if (accessToken.empty()) {
         std::string cached = getCachedRecToken();
         return !cached.empty();
@@ -91,12 +71,10 @@ std::string AuthClient::getAccessToken() const { return accessToken; }
 std::string AuthClient::getRefreshToken() const { return refreshToken; }
 
 void AuthClient::cacheRecToken(const std::string& recToken) {
-    // Encrypt and persist to disk
     std::string enc = encryptDPAPI(recToken);
     if (enc.empty()) return;
     cachedRecToken = enc;
 
-    // Ensure folder in %LOCALAPPDATA%\UltraLightRecorder
     char* localAppData = nullptr;
     size_t len = 0;
     _dupenv_s(&localAppData, &len, "LOCALAPPDATA");
@@ -116,7 +94,6 @@ void AuthClient::cacheRecToken(const std::string& recToken) {
 
 std::string AuthClient::getCachedRecToken() const {
     if (!cachedRecToken.empty()) {
-        // return decrypted
         std::string dec = const_cast<AuthClient*>(this)->decryptDPAPI(cachedRecToken);
         return dec;
     }
@@ -137,93 +114,50 @@ std::string AuthClient::getCachedRecToken() const {
     return dec;
 }
 
-// Minimal WinHTTP POST implementation using WinHttpCrackUrl
+// Simplified WinHTTP POST implementation using manual URL parsing to avoid WinHttpCrackUrl
 bool AuthClient::sendPost(const std::string& path, const std::string& body, const std::string& authHeader, std::string& outResponse) {
-    URL_COMPONENTSA urlComp;
-    ZeroMemory(&urlComp, sizeof(urlComp));
-    urlComp.dwStructSize = sizeof(urlComp);
-
-    // Prepare buffers for host and path
-    char host[256] = {0};
-    char urlPath[2048] = {0};
-    urlComp.lpszHostName = host;
-    urlComp.dwHostNameLength = _countof(host);
-    urlComp.lpszUrlPath = urlPath;
-    urlComp.dwUrlPathLength = _countof(urlPath);
-
     std::string fullUrl = serverUrl + path;
-    if (!WinHttpCrackUrl(fullUrl.c_str(), (DWORD)fullUrl.length(), 0, &urlComp)) {
-        return false;
+
+    // parse scheme://host:port/path
+    std::string scheme = "http";
+    size_t pos = fullUrl.find("://");
+    size_t idx = 0;
+    if (pos != std::string::npos) {
+        scheme = fullUrl.substr(0, pos);
+        idx = pos + 3;
+    }
+    size_t slash = fullUrl.find('/', idx);
+    std::string hostport = (slash == std::string::npos) ? fullUrl.substr(idx) : fullUrl.substr(idx, slash - idx);
+    std::string pathPart = (slash == std::string::npos) ? std::string("/") : fullUrl.substr(slash);
+
+    std::string host = hostport;
+    int port = (scheme == "https") ? 443 : 80;
+    size_t colon = hostport.find(':');
+    if (colon != std::string::npos) {
+        host = hostport.substr(0, colon);
+        try { port = std::stoi(hostport.substr(colon + 1)); } catch(...) { port = (scheme == "https") ? 443 : 80; }
     }
 
-    bool result = false;
     HINTERNET hSession = WinHttpOpen(L"UltraLightRecorder/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!hSession) return false;
 
-    std::wstring hostW;
-    int reqPort = urlComp.nPort;
-    {
-        int needed = MultiByteToWideChar(CP_UTF8, 0, urlComp.lpszHostName, urlComp.dwHostNameLength, NULL, 0);
-        hostW.resize(needed);
-        MultiByteToWideChar(CP_UTF8, 0, urlComp.lpszHostName, urlComp.dwHostNameLength, &hostW[0], needed);
-    }
+    HINTERNET hConnect = WinHttpConnect(hSession, utf8_to_wstring(host).c_str(), port, 0);
+    if (!hConnect) { WinHttpCloseHandle(hSession); return false; }
 
-    HINTERNET hConnect = WinHttpConnect(hSession, hostW.c_str(), reqPort, 0);
-    if (!hConnect) {
-        WinHttpCloseHandle(hSession);
-        return false;
-    }
-
-    std::wstring pathW;
-    {
-        int needed = MultiByteToWideChar(CP_UTF8, 0, urlComp.lpszUrlPath, urlComp.dwUrlPathLength, NULL, 0);
-        pathW.resize(needed);
-        MultiByteToWideChar(CP_UTF8, 0, urlComp.lpszUrlPath, urlComp.dwUrlPathLength, &pathW[0], needed);
-    }
-
-    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"POST", pathW.c_str(), NULL, WINHTTP_NO_REFERER,
-        WINHTTP_DEFAULT_ACCEPT_TYPES, (urlComp.nScheme == INTERNET_SCHEME_HTTPS) ? WINHTTP_FLAG_SECURE : 0);
-    if (!hRequest) {
-        WinHttpCloseHandle(hConnect);
-        WinHttpCloseHandle(hSession);
-        return false;
-    }
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"POST", utf8_to_wstring(pathPart).c_str(), NULL, WINHTTP_NO_REFERER,
+        WINHTTP_DEFAULT_ACCEPT_TYPES, (scheme == "https") ? WINHTTP_FLAG_SECURE : 0);
+    if (!hRequest) { WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return false; }
 
     std::wstring headers = L"Content-Type: application/json";
-    if (!authHeader.empty()) {
-        // convert authHeader to wide and append
-        int needed = MultiByteToWideChar(CP_UTF8, 0, authHeader.c_str(), (int)authHeader.size(), NULL, 0);
-        std::wstring authW;
-        authW.resize(needed);
-        MultiByteToWideChar(CP_UTF8, 0, authHeader.c_str(), (int)authHeader.size(), &authW[0], needed);
-        headers += L"\r\n" + authW;
-    }
+    if (!authHeader.empty()) headers += L"\r\n" + utf8_to_wstring(authHeader);
 
-    std::wstring bodyW;
-    {
-        int needed = MultiByteToWideChar(CP_UTF8, 0, body.c_str(), (int)body.size(), NULL, 0);
-        bodyW.resize(needed);
-        MultiByteToWideChar(CP_UTF8, 0, body.c_str(), (int)body.size(), &bodyW[0], needed);
-    }
+    BOOL send = WinHttpSendRequest(hRequest, headers.c_str(), (DWORD)-1, (LPVOID)body.c_str(), (DWORD)body.size(), (DWORD)body.size(), 0);
+    if (!send) { WinHttpCloseHandle(hRequest); WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return false; }
 
-    BOOL send = WinHttpSendRequest(hRequest, headers.c_str(), (DWORD)-1L, (LPVOID)body.c_str(), (DWORD)body.size(), (DWORD)body.size(), 0);
-    if (!send) {
-        WinHttpCloseHandle(hRequest);
-        WinHttpCloseHandle(hConnect);
-        WinHttpCloseHandle(hSession);
-        return false;
-    }
+    if (!WinHttpReceiveResponse(hRequest, NULL)) { WinHttpCloseHandle(hRequest); WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return false; }
 
-    if (!WinHttpReceiveResponse(hRequest, NULL)) {
-        WinHttpCloseHandle(hRequest);
-        WinHttpCloseHandle(hConnect);
-        WinHttpCloseHandle(hSession);
-        return false;
-    }
-
-    // Read response
-    DWORD dwSize = 0;
-    do {
+    outResponse.clear();
+    while (true) {
         DWORD available = 0;
         if (!WinHttpQueryDataAvailable(hRequest, &available)) break;
         if (available == 0) break;
@@ -232,13 +166,12 @@ bool AuthClient::sendPost(const std::string& path, const std::string& body, cons
         if (WinHttpReadData(hRequest, buffer.data(), available, &downloaded) && downloaded > 0) {
             outResponse.append(buffer.data(), downloaded);
         } else break;
-    } while (dwSize != 0);
+    }
 
-    result = true;
     WinHttpCloseHandle(hRequest);
     WinHttpCloseHandle(hConnect);
     WinHttpCloseHandle(hSession);
-    return result;
+    return true;
 }
 
 // DPAPI encryption using HWID as optional entropy
@@ -258,7 +191,6 @@ std::string AuthClient::encryptDPAPI(const std::string& plain) {
         return std::string();
     }
 
-    // base64 encode
     std::string b64 = base64Encode(std::string((char*)outBlob.pbData, outBlob.cbData));
     LocalFree(outBlob.pbData);
     return b64;
@@ -288,7 +220,6 @@ std::string AuthClient::decryptDPAPI(const std::string& cipherBase64) {
 }
 
 std::string AuthClient::getHWID() const {
-    // Simple HWID: volume serial of system drive + computer name
     DWORD serial = 0;
     char sysRoot[MAX_PATH] = "C:\\";
     GetVolumeInformationA(sysRoot, NULL, 0, &serial, NULL, NULL, NULL, 0);
@@ -302,25 +233,23 @@ std::string AuthClient::getHWID() const {
     return ss.str();
 }
 
-// Very small JSON extractor (not a substitute for a real JSON parser)
 std::string AuthClient::extractJsonString(const std::string& json, const std::string& key) const {
-    std::string pattern = "\"" + key + "\"\s*:\s*\"";
-    size_t pos = json.find(pattern);
+    // Very small ad-hoc extractor: "key":"value"
+    std::string needle = "\"" + key + "\"\s*:\s*\""; // try simple form
+    size_t pos = json.find("\"" + key + "\":\"");
     if (pos == std::string::npos) return std::string();
-    pos += pattern.length();
+    pos = pos + key.length() + 4; // skip "key":"
     size_t end = json.find('"', pos);
     if (end == std::string::npos) return std::string();
     return json.substr(pos, end - pos);
 }
 
-// Base64 helpers using Windows APIs
 std::string AuthClient::base64Encode(const std::string& data) const {
     DWORD len = 0;
     if (!CryptBinaryToStringA((const BYTE*)data.data(), (DWORD)data.size(), CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, NULL, &len)) return std::string();
     std::string out;
     out.resize(len);
     if (!CryptBinaryToStringA((const BYTE*)data.data(), (DWORD)data.size(), CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, &out[0], &len)) return std::string();
-    // remove any trailing null produced by API
     if (!out.empty() && out.back() == '\0') out.pop_back();
     return out;
 }

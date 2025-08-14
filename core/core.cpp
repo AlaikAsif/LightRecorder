@@ -4,6 +4,7 @@
 #include "encode/mjpeg.h"
 #include "audio/wasapi_capture.h"
 #include "io/writer.h"
+#include "io/avi_mux.h"
 #include "util/timing.h"
 #include "util/arena_alloc.h"
 #include <chrono>
@@ -11,52 +12,20 @@
 
 static uint64_t now_ms() {
     using namespace std::chrono;
-    return (uint64_t)duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+    return (uint64_t)duration_cast<milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-class ScreenRecorder {
-public:
-    ScreenRecorder();
-    ~ScreenRecorder();
-
-    bool initialize(int width, int height, int fps);
-    void startCapture();
-    void stopCapture();
-    void processFrames();
-    void writeOutput();
-
-private:
-    GdiCapture* gdiCapture;
-    HookPresent* hookPresent;
-    MjpegEncoder* mjpegEncoder;
-    AVIMux* aviMux;
-    WASAPICapture* audioCapture;
-    Writer* writer;
-    SPSC_Ring<int>* captureToEncodeRing;
-    SPSC_Ring<VideoPacket>* encodeToWriterRing;
-    SPSC_Ring<AudioPacket>* audioRing;
-    std::thread encoderThread;
-    std::thread writerThread;
-    std::atomic<bool> running;
-    int cfgWidth;
-    int cfgHeight;
-    int cfgFps;
-    int cfgBufferCount;
-
-    void encoderLoop();
-    void writerLoop();
-};
-
-ScreenRecorder::ScreenRecorder()
+// Implementation of Core (was previously ScreenRecorder)
+Core::Core()
     : gdiCapture(nullptr), hookPresent(nullptr), mjpegEncoder(nullptr), aviMux(nullptr), audioCapture(nullptr),
       captureToEncodeRing(nullptr), encodeToWriterRing(nullptr), audioRing(nullptr), running(false),
       cfgWidth(1280), cfgHeight(720), cfgFps(30), cfgBufferCount(4) {}
 
-ScreenRecorder::~ScreenRecorder() {
-    stopCapture();
+Core::~Core() {
+    stop();
 }
 
-bool ScreenRecorder::initialize(int width, int height, int fps) {
+bool Core::initialize(int width, int height, int fps) {
     cfgWidth = width;
     cfgHeight = height;
     cfgFps = fps;
@@ -66,47 +35,54 @@ bool ScreenRecorder::initialize(int width, int height, int fps) {
     encodeToWriterRing = new SPSC_Ring<VideoPacket>(32);
     audioRing = new SPSC_Ring<AudioPacket>(64);
 
-    gdiCapture = new GdiCapture(cfgWidth, cfgHeight, cfgFps, cfgBufferCount);
+    gdiCapture = new GDICapture(cfgWidth, cfgHeight, cfgFps, cfgBufferCount);
     if (!gdiCapture->Initialize()) return false;
 
-    mjpegEncoder = new MjpegEncoder(cfgWidth, cfgHeight);
-    aviMux = new AVIMux("recording.avi");
-    if (!aviMux->open()) {
-        std::cerr << "Failed to open AVI mux output file" << std::endl;
-        return false;
-    }
+    mjpegEncoder = new MJPEGEncoder(cfgWidth, cfgHeight);
 
     audioCapture = new WASAPICapture();
     if (!audioCapture->Initialize()) {
         std::cerr << "Failed to initialize WASAPI capture" << std::endl;
         // audio optional; continue without audio
         delete audioCapture; audioCapture = nullptr;
-    } else {
-        // configure avi mux audio params
-        aviMux->setAudioParameters(audioCapture->getSampleRate(), audioCapture->getChannels(), audioCapture->getBlockAlign(), 16);
     }
 
-    aviMux->setVideoParameters(cfgWidth, cfgHeight, cfgFps);
+    // Do not open AVI mux here; open when start() is called with filename
 
     return true;
 }
 
-void ScreenRecorder::startCapture() {
+bool Core::start(const std::string& outFilename) {
+    if (running.load()) return false;
+
+    aviMux = new AVIMux(outFilename.c_str());
+    if (!aviMux->open()) {
+        std::cerr << "Failed to open AVI mux output file" << std::endl;
+        delete aviMux; aviMux = nullptr;
+        return false;
+    }
+
+    if (audioCapture) {
+        aviMux->setAudioParameters(audioCapture->getSampleRate(), audioCapture->getChannels(), audioCapture->getBlockAlign(), 16);
+    }
+    aviMux->setVideoParameters(cfgWidth, cfgHeight, cfgFps);
+
     running.store(true);
+
     // Start capturing frames and audio
     if (!gdiCapture->Start(captureToEncodeRing)) {
         std::cerr << "Failed to start GDI capture" << std::endl;
         running.store(false);
-        return;
+        return false;
     }
 
     if (audioCapture) {
         audioCapture->Start(audioRing);
     }
 
-    // start encoder thread
-    encoderThread = std::thread(&ScreenRecorder::encoderLoop, this);
-    writerThread = std::thread(&ScreenRecorder::writerLoop, this);
+    // start encoder and writer threads
+    encoderThread = std::thread(&Core::encoderLoop, this);
+    writerThread = std::thread(&Core::writerLoop, this);
 
     // Start a monitor thread to observe queue fill and perform fallback logic
     std::thread([this]() {
@@ -120,7 +96,6 @@ void ScreenRecorder::startCapture() {
         auto lowStart = steady_clock::time_point();
 
         bool currentlyLowered = (cfgFps <= 30);
-        int targetFps = cfgFps;
 
         while (running.load()) {
             double fill = captureToEncodeRing->fillFactor();
@@ -154,9 +129,11 @@ void ScreenRecorder::startCapture() {
             std::this_thread::sleep_for(milliseconds(100));
         }
     }).detach();
+
+    return true;
 }
 
-void ScreenRecorder::stopCapture() {
+void Core::stop() {
     if (!running.load()) return;
     running.store(false);
 
@@ -175,17 +152,10 @@ void ScreenRecorder::stopCapture() {
     if (captureToEncodeRing) { delete captureToEncodeRing; captureToEncodeRing = nullptr; }
     if (encodeToWriterRing) { delete encodeToWriterRing; encodeToWriterRing = nullptr; }
     if (audioRing) { delete audioRing; audioRing = nullptr; }
+    if (audioCapture) { delete audioCapture; audioCapture = nullptr; }
 }
 
-void ScreenRecorder::processFrames() {
-    // Process captured frames for encoding
-}
-
-void ScreenRecorder::writeOutput() {
-    // Write encoded frames and audio to disk
-}
-
-void ScreenRecorder::encoderLoop() {
+void Core::encoderLoop() {
     int index;
     while (running.load()) {
         if (captureToEncodeRing->pop(index)) {
@@ -205,7 +175,7 @@ void ScreenRecorder::encoderLoop() {
     }
 }
 
-void ScreenRecorder::writerLoop() {
+void Core::writerLoop() {
     VideoPacket v;
     AudioPacket a;
 

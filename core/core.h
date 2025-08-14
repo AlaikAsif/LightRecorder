@@ -16,6 +16,7 @@
 #include <thread>
 #include <atomic>
 #include <vector>
+#include <string>
 
 class Core {
 public:

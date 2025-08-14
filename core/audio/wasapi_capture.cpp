@@ -27,10 +27,11 @@ bool WASAPICapture::Initialize() {
     hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL, IID_PPV_ARGS(&enumerator));
     if (FAILED(hr)) return false;
 
-    hr = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &audioDevice);
+    hr = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, audioDevice.GetAddressOf());
     if (FAILED(hr)) return false;
 
-    hr = audioDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, reinterpret_cast<void**>(&audioClient));
+    // Use Activate with explicit parameters and cast ComPtr address to void**
+    hr = audioDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, reinterpret_cast<void**>(audioClient.GetAddressOf()));
     if (FAILED(hr)) return false;
 
     hr = audioClient->GetMixFormat(&waveFormat);
